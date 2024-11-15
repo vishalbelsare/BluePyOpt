@@ -3,59 +3,22 @@
 BluePyOpt
 =========
 
-.. raw:: html
 
-	<table>
-	<tr>
-	  <td>Latest Release</td>
-	  <td>
-	    <a href="https://pypi.org/project/bluepyopt/">
-	    <img src="https://img.shields.io/pypi/v/bluepyopt.svg" alt="latest release" />
-	    </a>
-	  </td>
-	</tr>
-	<tr>
-	  <td>Documentation</td>
-	  <td>
-	    <a href="https://bluepyopt.readthedocs.io/">
-	    <img src="https://readthedocs.org/projects/bluepyopt/badge/?version=latest" alt="latest documentation" />
-	    </a>
-	  </td>
-	</tr>
-	<tr>
-	  <td>License</td>
-	  <td>
-	    <a href="https://github.com/BlueBrain/bluepyopt/blob/master/LICENSE.txt">
-	    <img src="https://img.shields.io/pypi/l/bluepyopt.svg" alt="license" />
-	    </a>
-	</td>
-	</tr>
-	<tr>
-	  <td>Build Status</td>
-	  <td>
-	    <a href="https://github.com/BlueBrain/BluePyOpt/actions">
-	    <img src="https://github.com/BlueBrain/BluePyOpt/workflows/Build/badge.svg?branch=master" alt="Actions build status" />
-	    </a>
-	  </td>
-	</tr>
-	<tr>
-	  <td>Coverage</td>
-	  <td>
-	    <a href="https://codecov.io/gh/BlueBrain/bluepyopt">
-	    <img src="https://codecov.io/github/BlueBrain/BluePyOpt/coverage.svg?branch=master" alt="coverage" />
-	    </a>
-	  </td>
-	</tr>
-	<tr>
-		<td>Gitter</td>
-		<td>
-			<a href="https://gitter.im/bluebrain/bluepyopt">
-			<img src="https://badges.gitter.im/Join%20Chat.svg"
-		</a>
-		</td>
-	</tr>
-	</table>
-
++----------------+------------+
+| Latest Release | |pypi|     |
++----------------+------------+
+| Documentation  | |docs|     |
++----------------+------------+
+| License        | |license|  |
++----------------+------------+
+| Build Status 	 | |build|    |
++----------------+------------+
+| Coverage       | |coverage| |
++----------------+------------+
+| Gitter         | |gitter|   |
++----------------+------------+
+| Zenodo         | |zenodo|   |
++----------------+------------+
 
 
 Introduction
@@ -97,12 +60,19 @@ When you use the BluePyOpt software or method for your research, we ask you to c
 	}
 
 
+Publications that use or mention BluePyOpt
+==========================================
+The list of publications that use or mention BluePyOpt can be found on `the github wiki page <https://github.com/BlueBrain/BluePyOpt/wiki/Publications-that-use-or-mention-BluePyOpt>`_.
+
 Support
 =======
 We are providing support using a chat channel on `Gitter <https://gitter.im/BlueBrain/BluePyOpt>`_, or the `Github discussion page <https://github.com/BlueBrain/BluePyOpt/discussions>`_.
 
 News
 ====
+- 2023/01: BluePyOpt now supports the Arbor simulator.
+- 2022/12: Support for LFPy models merged into master. Examples and preprint: https://github.com/alejoe91/multimodalfitting, https://www.biorxiv.org/content/10.1101/2022.08.03.502468v1.full
+- 2022/12: BluePyOpt now has the ability to write out NeuroML files: https://github.com/BlueBrain/BluePyOpt/tree/master/bluepyopt/neuroml
 - 2021/08/30: BluePyOpt dropped Python 2.7 support.
 - 2017/01/04: BluePyOpt is now considered compatible with Python 3.6+.
 - 2016/11/10: BluePyOpt now supports NEURON point processes. This means we can fit parameters of Adex/GIF/Izhikevich models, and also synapse models.
@@ -115,7 +85,7 @@ News
 Requirements
 ============
 
-* `Python 3.6+ <https://www.python.org/downloads/release/python-360/>`_
+* `Python 3.9+ <https://www.python.org/downloads/release/python-390/>`_
 * `Pip <https://pip.pypa.io>`_ (installed by default in newer versions of Python)
 * `Neuron 7.4+ <http://neuron.yale.edu/>`_ (compiled with Python support)
 * `eFEL eFeature Extraction Library <https://github.com/BlueBrain/eFEL>`_ (automatically installed by pip)
@@ -135,6 +105,11 @@ And then bluepyopt itself:
 
     pip install bluepyopt
 
+Support for simulators other than NEURON is optional and not installed by default. If you want to use [Arbor](https://arbor-sim.org/) to run your models, use the following line instead to install bluepyopt.
+
+.. code-block:: bash
+
+    pip install bluepyopt[arbor]
 
 Cloud infrastructure
 ====================
@@ -152,7 +127,8 @@ Single compartmental model
 An iPython notebook with an introductory optimisation of a one compartmental
 model with 2 HH channels can be found at
 
-https://github.com/BlueBrain/BluePyOpt/blob/master/examples/simplecell/simplecell.ipynb
+https://github.com/BlueBrain/BluePyOpt/blob/master/examples/simplecell/simplecell.ipynb (NEURON)
+https://github.com/BlueBrain/BluePyOpt/blob/master/examples/simplecell/simplecell_arbor.ipynb (Arbor)
 
 
 |landscape_example|
@@ -167,7 +143,8 @@ Scripts for a more complex neocortical L5PC are in
 
 With a notebook:
 
-https://github.com/BlueBrain/BluePyOpt/blob/master/examples/l5pc/L5PC.ipynb
+https://github.com/BlueBrain/BluePyOpt/blob/master/examples/l5pc/L5PC.ipynb (NEURON)
+https://github.com/BlueBrain/BluePyOpt/blob/master/examples/l5pc/L5PC_arbor.ipynb (Arbor)
 
 Thalamocortical Cells
 ---------------------
@@ -189,6 +166,14 @@ With 2 notebooks:
 https://github.com/BlueBrain/BluePyOpt/blob/master/examples/tsodyksmarkramstp/tsodyksmarkramstp.ipynb
 https://github.com/BlueBrain/BluePyOpt/blob/master/examples/tsodyksmarkramstp/tsodyksmarkramstp_multiplefreqs.ipynb
 
+Exporting cell in neuroml format
+--------------------------------
+An iPython notebook showing how to export a BluePyOpt cell in the neuroml format, how to create a LEMS simulation,
+and how to run the LEMS simulation with the neuroml cell can be found at:
+
+https://github.com/BlueBrain/BluePyOpt/blob/master/examples/neuroml/neuroml.ipynb
+
+
 API documentation
 =================
 The API documentation can be found on `ReadTheDocs <http://bluepyopt.readthedocs.io/en/latest/>`_.
@@ -198,7 +183,7 @@ Funding
 This work has been partially funded by the European Union Seventh Framework Program (FP7/2007­2013) under grant agreement no. 604102 (HBP), the European Union’s Horizon 2020 Framework Programme for Research and Innovation under the Specific Grant Agreement No. 720270, 785907 (Human Brain Project SGA1/SGA2) and by the EBRAINS research infrastructure, funded from the European Union’s Horizon 2020 Framework Programme for Research and Innovation under the Specific Grant Agreement No. 945539 (Human Brain Project SGA3).
 This project/research was supported by funding to the Blue Brain Project, a research center of the École polytechnique fédérale de Lausanne (EPFL), from the Swiss government’s ETH Board of the Swiss Federal Institutes of Technology.
 
-Copyright (c) 2016-2022 Blue Brain Project/EPFL
+Copyright (c) 2016-2024 Blue Brain Project/EPFL
 
 ..
     The following image is also defined in the index.rst file, as the relative path is 
@@ -206,6 +191,33 @@ Copyright (c) 2016-2022 Blue Brain Project/EPFL
     The following location is used for the github README
     The index.rst location is used for the docs README; index.rst also defined an end-marker, 
     to skip content after the marker 'substitutions'.
+
+.. |pypi| image:: https://img.shields.io/pypi/v/bluepyopt.svg
+               :target: https://pypi.org/project/bluepyopt/
+               :alt: latest release
+
+.. |docs| image:: https://readthedocs.org/projects/bluepyopt/badge/?version=latest
+               :target: https://bluepyopt.readthedocs.io/
+               :alt: latest documentation
+
+.. |license| image:: https://img.shields.io/pypi/l/bluepyopt.svg
+                  :target: https://github.com/BlueBrain/bluepyopt/blob/master/LICENSE.txt
+                  :alt: license
+
+.. |build| image:: https://github.com/BlueBrain/BluePyOpt/workflows/Build/badge.svg?branch=master
+                :target: https://github.com/BlueBrain/BluePyOpt/actions
+                :alt: actions build status
+
+.. |coverage| image:: https://codecov.io/github/BlueBrain/BluePyOpt/coverage.svg?branch=master
+                   :target: https://codecov.io/gh/BlueBrain/bluepyopt
+                   :alt: coverage
+
+.. |gitter| image:: https://badges.gitter.im/Join%20Chat.svg
+                 :target: https://gitter.im/BlueBrain/blueptopt
+                 :alt: Join the chat at https://gitter.im/BlueBrain/BluePyOpt
+
+.. |zenodo| image:: https://zenodo.org/badge/DOI/10.5281/zenodo.8135890.svg
+                :target: https://doi.org/10.5281/zenodo.8135890
 
 .. substitutions
 .. |banner| image:: docs/source/logo/BluePyOptBanner.png

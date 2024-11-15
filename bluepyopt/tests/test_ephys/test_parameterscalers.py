@@ -1,7 +1,9 @@
 """Test ephys.parameterscalers"""
 
 import json
-
+import pathlib
+import tempfile
+import arbor
 
 import pytest
 
@@ -37,6 +39,37 @@ def test_NrnSegmentSomaDistanceScaler_dist_params():
 
 
 @pytest.mark.unit
+def test_NrnSegmentSectionDistanceScaler_eval_dist_with_dict():
+    """ephys.parameterscalers: eval_dist of NrnSegmentSectionDistanceScaler"""
+
+    dist = '{param1_somatic} + (1 - (abs({distance} - 8) / 4)) * {value}'
+
+    scaler = ephys.parameterscalers.NrnSegmentSectionDistanceScaler(
+        distribution=dist)
+
+    _values = {'value': 1, 'param1_somatic': 0.5}
+
+    assert (scaler.eval_dist(values=_values, distance=10)
+            == '0.5 + (1 - (abs(10 - 8) / 4)) * 1')
+
+
+@pytest.mark.unit
+def test_NrnSegmentSomaDistanceStepScaler_eval_dist_with_dict():
+    """ephys.parameterscalers: eval_dist of NrnSegmentSomaDistanceStepScaler"""
+
+    dist = '{value} * (0.1 + 0.9 * int(' \
+           '({distance} > {step_begin}) & ({distance} < {step_end})))'
+
+    scaler = ephys.parameterscalers.NrnSegmentSomaDistanceStepScaler(
+        distribution=dist, step_begin=300, step_end=500)
+
+    _values = {'value': 1}
+
+    assert (scaler.eval_dist(values=_values, distance=10)
+            == '1 * (0.1 + 0.9 * int((10 > 300) & (10 < 500)))')
+
+
+@pytest.mark.unit
 def test_serialize():
     """ephys.parameterscalers: test serialization"""
 
@@ -57,3 +90,88 @@ def test_serialize():
         deserialized = instantiator(serialized)
         assert isinstance(deserialized, ps.__class__)
         assert deserialized.name == ps.__class__.__name__
+
+
+@pytest.mark.unit
+def test_parameterscalers_iexpr_generator():
+    """ephys.parameterscalers: Test iexpr generation from python expression"""
+
+    value = 2.125
+    value_scaler = ephys.parameterscalers.NrnSegmentSomaDistanceScaler(
+        name='soma_distance_scaler',
+        distribution='(0.62109375 - math.log( math.pi ) * math.exp('
+                     '({distance}) / 0.421875)) * {value}')
+
+    iexpr = value_scaler.acc_scale_iexpr(
+        value=value, constant_formatter=lambda v: '%.9g' % v)
+
+    assert iexpr == '(sub (scalar 0.62109375) ' \
+                    '(mul (log (pi) ) ' \
+                    '(exp (div (distance (region "soma")) ' \
+                    '(scalar 0.421875) ) ) ) )'
+
+
+@pytest.mark.unit
+def test_parameterscalers_iexpr_generator_non_existent_op():
+    """ephys.parameterscalers: Test iexpr generation from python expression
+    with invalid node"""
+
+    value = 2.125
+    value_scaler = ephys.parameterscalers.NrnSegmentSomaDistanceScaler(
+        name='soma_distance_scaler',
+        distribution='(0.62109375 - math.log( math.pi ) * non_existent_func('
+                     '({distance}) / 0.421875)) * {value}')
+
+    with pytest.raises(ValueError,
+                       match='Arbor iexpr generation failed - '
+                             'unsupported function non_existent_func.'):
+        iexpr = value_scaler.acc_scale_iexpr(
+            value=value, constant_formatter=lambda v: '%.9g' % v)
+
+
+@pytest.mark.unit
+def test_parameterscalers_iexpr_generator_unsupported_attr():
+    """ephys.parameterscalers: Test iexpr generation from python expression
+    with invalid node"""
+
+    value = 2.125
+    value_scaler = ephys.parameterscalers.NrnSegmentSomaDistanceScaler(
+        name='soma_distance_scaler',
+        distribution='(0.62109375 - math.log( math.pi )* math.tau.hex('
+                     '({distance}) / 0.421875)) * {value}')
+
+    with pytest.raises(ValueError,
+                       match='Arbor iexpr generation failed - '
+                             'unsupported attribute tau.'):
+        iexpr = value_scaler.acc_scale_iexpr(
+            value=value, constant_formatter=lambda v: '%.9g' % v)
+
+
+@pytest.mark.unit
+def test_parameterscalers_iexpr():
+    """ephys.parameterscalers: Test iexpr"""
+    # iexpr from bluepyopt/tests/test_ephys/test_parameterscalers.py
+    iexpr = '(sub (scalar 0.62109375) ' \
+            '(mul (log (pi) ) ' \
+            '(exp (div (distance (region "soma")) ' \
+            '(scalar 0.421875) ) ) ) )'
+
+    # modified decor as in
+    # bluepyopt/tests/test_ephys/testdata/acc/simplecell/simple_cell_decor.acc
+    simple_cell_decor_with_iexpr = \
+        '(arbor-component\n' \
+        '  (meta-data (version "0.9-dev"))\n' \
+        '  (decor\n' \
+        '    (paint (region "soma") ' \
+        '(membrane-capacitance 0.01 (scalar 1.0)))\n' \
+        '    (paint (region "soma") ' \
+        '(scaled-mechanism (density (mechanism "default::hh" ' \
+        '("gnabar" 0.10299326453483033) ("gkbar" 0.027124836082684685))) ' \
+        f'("gkbar" {iexpr})))))'
+
+    with tempfile.TemporaryDirectory() as test_dir:
+        decor_filename = pathlib.Path(test_dir).joinpath("decor.acc")
+        with open(decor_filename, "w") as f:
+            f.write(simple_cell_decor_with_iexpr)
+        # check that load_component is not raising any error here
+        arbor.load_component(decor_filename).component

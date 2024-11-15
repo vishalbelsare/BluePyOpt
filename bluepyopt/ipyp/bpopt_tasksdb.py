@@ -1,7 +1,5 @@
 """Get stats out of ipyparallel's tasks.db"""
 
-from __future__ import print_function
-
 """
 Copyright (c) 2016-2020, EPFL/Blue Brain Project
 
@@ -98,7 +96,7 @@ def plot_duration_histogram(tasks):
     durations = np.fromiter((t['duration']
                              for task_list in tasks.values()
                              for t in task_list),
-                            dtype=np.float)
+                            dtype=np.float64)
     plt.hist(durations, 100)
 
     plt.xlabel('Duration (s)')

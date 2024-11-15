@@ -31,7 +31,7 @@ import os
 import collections
 import string
 
-from . import create_hoc
+from . import create_hoc, create_acc
 from . import morphologies
 
 import logging
@@ -102,6 +102,7 @@ class CellModel(Model):
 
         # Cell instantiation in simulator
         self.icell = None
+        self.icell_existing_secs = None
 
         self.param_values = None
         self.gid = gid
@@ -200,7 +201,6 @@ class CellModel(Model):
                ''' % dict(template_name=template_name, objref_str=objref_str,
                           newseclist_str=newseclist_str,
                           create_str=create_str)
-
         return template
 
     @staticmethod
@@ -223,8 +223,8 @@ class CellModel(Model):
 
         return template_function()
 
-    def instantiate(self, sim=None):
-        """Instantiate model in simulator"""
+    def instantiate_morphology(self, sim=None):
+        """Instantiate morphology in simulator"""
 
         # TODO replace this with the real template name
         if not hasattr(sim.neuron.h, self.name):
@@ -240,13 +240,29 @@ class CellModel(Model):
 
         self.morphology.instantiate(sim=sim, icell=self.icell)
 
+        self.icell_existing_secs = [
+            sec for sec in self.secarray_names
+            if sim.neuron.h.section_exists(sec, self.icell)]
+
+    def instantiate_morphology_3d(self, sim=None):
+        """Instantiate morphology and fill in 3d pts for stylized geometry"""
+
+        self.instantiate_morphology(sim=sim)
+        sim.neuron.h.define_shape()
+
+    def instantiate(self, sim=None):
+        """Instantiate model in simulator"""
+
+        self.instantiate_morphology(sim)
+
         if self.mechanisms is not None:
             for mechanism in self.mechanisms:
                 mechanism.instantiate(sim=sim, icell=self.icell)
 
         if self.params is not None:
             for param in self.params.values():
-                param.instantiate(sim=sim, icell=self.icell)
+                param.instantiate(sim=sim, icell=self.icell,
+                                  params=self.params)
 
     def destroy(self, sim=None):  # pylint: disable=W0613
         """Destroy instantiated model in simulator"""
@@ -263,6 +279,7 @@ class CellModel(Model):
         sim.neuron.h.Vector().size()
 
         self.icell = None
+        self.icell_existing_secs = None
 
         self.morphology.destroy(sim=sim)
         for mechanism in self.mechanisms:
@@ -280,11 +297,13 @@ class CellModel(Model):
                     'set before simulation' %
                     param_name)
 
-    def create_hoc(self, param_values,
-                   ignored_globals=(), template='cell_template.jinja2',
-                   disable_banner=False,
-                   template_dir=None):
-        """Create hoc code for this model"""
+    def _create_sim_desc(self, param_values,
+                         ignored_globals=(), template=None,
+                         disable_banner=False,
+                         template_dir=None,
+                         extra_params=None,
+                         sim_desc_creator=None):
+        """Create simulator description for this model"""
 
         to_unfreeze = []
         for param in self.params.values():
@@ -294,40 +313,119 @@ class CellModel(Model):
 
         template_name = self.name
         morphology = os.path.basename(self.morphology.morphology_path)
-        if self.morphology.do_replace_axon:
-            replace_axon = self.morphology.replace_axon_hoc
+
+        if sim_desc_creator is create_hoc.create_hoc:
+            if self.morphology.do_replace_axon:
+                replace_axon = self.morphology.replace_axon_hoc
+            else:
+                replace_axon = None
+
+            if (
+                self.morphology.morph_modifiers is not None
+                and self.morphology.morph_modifiers_hoc is None
+            ):
+                logger.warning('You have provided custom morphology'
+                               ' modifiers, but no corresponding hoc files.')
+            elif (
+                self.morphology.morph_modifiers is not None
+                and self.morphology.morph_modifiers_hoc is not None
+            ):
+                if replace_axon is None:
+                    replace_axon = ''
+                for morph_modifier_hoc in self.morphology.morph_modifiers_hoc:
+                    replace_axon += '\n'
+                    replace_axon += morph_modifier_hoc
+        elif sim_desc_creator is create_acc.create_acc:
+            if self.morphology.do_replace_axon:
+
+                replace_axon = morphologies.\
+                    ArbFileMorphology.extract_nrn_seclists(
+                        self.icell, [sl for sl in ['axon', 'myelin']
+                                     if sl in self.icell_existing_secs])
+
+            else:
+                replace_axon = None
         else:
-            replace_axon = None
+            raise ValueError('Unsupported sim_desc_creator %s '
+                             '(choose either create_hoc.create_hoc or '
+                             'create_acc.create_acc)', str(sim_desc_creator))
 
-        if (
-            self.morphology.morph_modifiers is not None
-            and self.morphology.morph_modifiers_hoc is None
-        ):
-            logger.warning('You have provided custom morphology modifiers, \
-                            but no corresponding hoc files.')
-        elif (
-            self.morphology.morph_modifiers is not None
-            and self.morphology.morph_modifiers_hoc is not None
-        ):
-            if replace_axon is None:
-                replace_axon = ''
-            for morph_modifier_hoc in self.morphology.morph_modifiers_hoc:
-                replace_axon += '\n'
-                replace_axon += morph_modifier_hoc
+        if extra_params is None:
+            extra_params = dict()
 
-        ret = create_hoc.create_hoc(mechs=self.mechanisms,
-                                    parameters=self.params.values(),
-                                    morphology=morphology,
-                                    ignored_globals=ignored_globals,
-                                    replace_axon=replace_axon,
-                                    template_name=template_name,
-                                    template_filename=template,
-                                    template_dir=template_dir,
-                                    disable_banner=disable_banner)
+        ret = sim_desc_creator(mechs=self.mechanisms,
+                               parameters=self.params.values(),
+                               morphology=morphology,
+                               ignored_globals=ignored_globals,
+                               replace_axon=replace_axon,
+                               template_name=template_name,
+                               template_filename=template,
+                               template_dir=template_dir,
+                               disable_banner=disable_banner,
+                               **extra_params)
 
         self.unfreeze(to_unfreeze)
 
         return ret
+
+    def create_hoc(self, param_values,
+                   ignored_globals=(), template='cell_template.jinja2',
+                   disable_banner=False,
+                   template_dir=None):
+        """Create hoc code for this model"""
+        return self._create_sim_desc(param_values,
+                                     ignored_globals, template,
+                                     disable_banner,
+                                     template_dir,
+                                     sim_desc_creator=create_hoc.create_hoc)
+
+    def create_acc(self, param_values,
+                   ignored_globals=(), template='acc/*_template.jinja2',
+                   disable_banner=False,
+                   template_dir=None,
+                   ext_catalogues=None,
+                   create_mod_morph=False,
+                   sim=None):
+        """Create JSON/ACC-description for this model"""
+        destroy_cell = False
+        if self.morphology.do_replace_axon:
+            if self.icell is None:
+                if sim is None:
+                    raise ValueError('Need an instance of NrnSimulator in sim'
+                                     ' to instantiate morphology in order to'
+                                     ' create JSON/ACC-description with'
+                                     ' axon replacement.')
+                self.instantiate_morphology_3d(sim=sim)
+                destroy_cell = True
+
+        extra_params = dict(
+            morphology_dir=os.path.dirname(self.morphology.morphology_path),
+            create_mod_morph=create_mod_morph,
+            ext_catalogues=ext_catalogues
+        )
+
+        ret = self._create_sim_desc(param_values,
+                                    ignored_globals, template,
+                                    disable_banner,
+                                    template_dir,
+                                    extra_params=extra_params,
+                                    sim_desc_creator=create_acc.create_acc)
+
+        if destroy_cell:
+            self.destroy(sim=sim)
+        return ret
+
+    def write_acc(self, output_dir, param_values,
+                  template_filename='acc/*_template.jinja2',
+                  ext_catalogues=None,
+                  create_mod_morph=False,
+                  sim=None):
+        """Write JSON/ACC-description for this model to output directory"""
+        create_acc.write_acc(output_dir, self, param_values,
+                             template_filename=template_filename,
+                             ext_catalogues=ext_catalogues,
+                             create_mod_morph=create_mod_morph,
+                             sim=sim)
 
     def __str__(self):
         """Return string representation"""
@@ -479,3 +577,315 @@ class HocCellModel(CellModel):
                 'NEURON does not have template: ' + template_name
 
         return template_name
+
+
+class LFPyCellModel(Model):
+
+    """LFPy.Cell model class"""
+
+    def __init__(
+        self,
+        name,
+        electrode=None,
+        morph=None,
+        mechs=None,
+        params=None,
+        dt=0.025,
+        v_init=-65.0,
+        gid=0,
+        seclist_names=None,
+        secarray_names=None,
+    ):
+        """Constructor
+
+        Args:
+            name (str): name of this object
+                        should be alphanumeric string, underscores are allowed,
+                        first char should be a letter
+            morph (Morphology):
+                underlying Morphology of the cell
+            mechs (list of Mechanisms):
+                Mechanisms associated with the cell
+            params (list of Parameters):
+                Parameters of the cell model
+            seclist_names (list of strings):
+                Names of the lists of sections
+            secarray_names (list of strings):
+                Names of the sections
+        """
+        super(LFPyCellModel, self).__init__(name)
+        self.check_name()
+        self.morphology = morph
+        self.mechanisms = mechs
+        self.params = collections.OrderedDict()
+        if params is not None:
+            for param in params:
+                self.params[param.name] = param
+
+        # Cell instantiation in simulator
+        self.icell = None
+        self.lfpy_cell = None
+        self.electrode = electrode
+        self.lfpy_electrode = None
+
+        self.dt = dt
+        self.v_init = v_init
+
+        self.param_values = None
+        self.gid = gid
+
+        if seclist_names is None:
+            self.seclist_names = [
+                "all",
+                "somatic",
+                "basal",
+                "apical",
+                "axonal",
+                "myelinated",
+            ]
+        else:
+            self.seclist_names = seclist_names
+
+        if secarray_names is None:
+            self.secarray_names = ["soma", "dend", "apic", "axon", "myelin"]
+        else:
+            self.secarray_names = secarray_names
+
+    def check_name(self):
+        """Check if name complies with requirements"""
+
+        allowed_chars = string.ascii_letters + string.digits + "_"
+
+        if sys.version_info[0] < 3:
+            translate_args = [None, allowed_chars]
+        else:
+            translate_args = [str.maketrans("", "", allowed_chars)]
+
+        if (
+            self.name == ""
+            or self.name[0] not in string.ascii_letters
+            or not str(self.name).translate(*translate_args) == ""
+        ):
+            raise TypeError(
+                'CellModel: name "%s" provided to constructor does not comply '
+                "with the rules for Neuron template name: name should be "
+                "alphanumeric "
+                "non-empty string, underscores are allowed, "
+                "first char should be letter" % self.name
+            )
+
+    def params_by_names(self, param_names):
+        """Get parameter objects by name"""
+
+        return [self.params[param_name] for param_name in param_names]
+
+    def freeze(self, param_dict):
+        """Set params"""
+
+        for param_name, param_value in param_dict.items():
+            self.params[param_name].freeze(param_dict[param_name])
+
+    def unfreeze(self, param_names):
+        """Unset params"""
+
+        for param_name in param_names:
+            self.params[param_name].unfreeze()
+
+    @staticmethod
+    def create_empty_template(
+        template_name, seclist_names=None, secarray_names=None
+    ):
+        """create an hoc template named template_name for an empty cell"""
+
+        objref_str = "objref this, CellRef"
+        newseclist_str = ""
+
+        if seclist_names:
+            for seclist_name in seclist_names:
+                objref_str += ", %s" % seclist_name
+                newseclist_str += (
+                    "             %s = new SectionList()\n" % seclist_name
+                )
+
+        create_str = ""
+        if secarray_names:
+            create_str = "create "
+            create_str += ", ".join(
+                "%s[1]" % secarray_name for secarray_name in secarray_names
+            )
+            create_str += "\n"
+
+        template = """\
+        begintemplate %(template_name)s
+          %(objref_str)s
+          proc init() {\n%(newseclist_str)s
+            forall delete_section()
+            CellRef = this
+          }
+
+          gid = 0
+
+          proc destroy() {localobj nil
+            CellRef = nil
+          }
+
+          %(create_str)s
+        endtemplate %(template_name)s
+               """ % dict(
+            template_name=template_name,
+            objref_str=objref_str,
+            newseclist_str=newseclist_str,
+            create_str=create_str,
+        )
+
+        return template
+
+    @staticmethod
+    def create_empty_cell(name, sim, seclist_names=None, secarray_names=None):
+        """Create an empty cell in Neuron"""
+
+        # TODO minize hardcoded definition
+        # E.g. sectionlist can be procedurally generated
+        hoc_template = CellModel.create_empty_template(
+            name, seclist_names, secarray_names
+        )
+        sim.neuron.h(hoc_template)
+
+        template_function = getattr(sim.neuron.h, name)
+
+        return template_function()
+
+    def instantiate(self, sim=None):
+        """Instantiate model in simulator"""
+        from LFPy import Cell
+        from lfpykit import RecExtElectrode
+
+        # TODO replace this with the real template name
+        if not hasattr(sim.neuron.h, self.name):
+            self.icell = self.create_empty_cell(
+                self.name,
+                sim=sim,
+                seclist_names=self.seclist_names,
+                secarray_names=self.secarray_names,
+            )
+        else:
+            self.icell = getattr(sim.neuron.h, self.name)()
+
+        self.icell.gid = self.gid
+
+        self.morphology.instantiate(sim=sim, icell=self.icell)
+
+        self.lfpy_cell = Cell(
+            morphology=sim.neuron.h.allsec(),
+            dt=self.dt,
+            v_init=self.v_init,
+            pt3d=True,
+            delete_sections=False,
+            nsegs_method=None,
+        )
+
+        self.lfpy_electrode = RecExtElectrode(
+            self.lfpy_cell, probe=self.electrode
+        )
+
+        if self.mechanisms is not None:
+            for mechanism in self.mechanisms:
+                mechanism.instantiate(sim=sim, icell=self.icell)
+
+        if self.params is not None:
+            for param in self.params.values():
+                param.instantiate(sim=sim, icell=self.icell,
+                                  params=self.params)
+
+    def destroy(self, sim=None):  # pylint: disable=W0613
+        """Destroy instantiated model in simulator"""
+
+        # Make sure the icell's destroy() method is called
+        # without it a circular reference exists between CellRef and the object
+        # this prevents the icells from being garbage collected, and
+        # cell objects pile up in the simulator
+        self.icell.destroy()
+
+        # The line below is some M. Hines magic
+        # DON'T remove it, because it will make sure garbage collection
+        # is called on the icell object
+        sim.neuron.h.Vector().size()
+
+        self.icell = None
+
+        self.morphology.destroy(sim=sim)
+        for mechanism in self.mechanisms:
+            mechanism.destroy(sim=sim)
+        for param in self.params.values():
+            param.destroy(sim=sim)
+
+    def check_nonfrozen_params(self, param_names):  # pylint: disable=W0613
+        """Check if all nonfrozen params are set"""
+
+        for param_name, param in self.params.items():
+            if not param.frozen:
+                raise Exception(
+                    "CellModel: Nonfrozen param %s needs to be "
+                    "set before simulation" % param_name
+                )
+
+    def create_hoc(
+        self,
+        param_values,
+        ignored_globals=(),
+        template="cell_template.jinja2",
+        disable_banner=False,
+        template_dir=None,
+    ):
+        """Create hoc code for this model"""
+
+        to_unfreeze = []
+        for param in self.params.values():
+            if not param.frozen:
+                param.freeze(param_values[param.name])
+                to_unfreeze.append(param.name)
+
+        template_name = self.name
+        morphology = os.path.basename(self.morphology.morphology_path)
+        if self.morphology.do_replace_axon:
+            replace_axon = self.morphology.replace_axon_hoc
+        else:
+            replace_axon = None
+
+        ret = create_hoc.create_hoc(
+            mechs=self.mechanisms,
+            parameters=self.params.values(),
+            morphology=morphology,
+            ignored_globals=ignored_globals,
+            replace_axon=replace_axon,
+            template_name=template_name,
+            template_filename=template,
+            template_dir=template_dir,
+            disable_banner=disable_banner,
+        )
+
+        self.unfreeze(to_unfreeze)
+
+        return ret
+
+    def __str__(self):
+        """Return string representation"""
+
+        content = "%s:\n" % self.name
+
+        content += "  morphology:\n"
+
+        if self.morphology is not None:
+            content += "    %s\n" % str(self.morphology)
+
+        content += "  mechanisms:\n"
+        if self.mechanisms is not None:
+            for mechanism in self.mechanisms:
+                content += "    %s\n" % mechanism
+
+        content += "  params:\n"
+        if self.params is not None:
+            for param in self.params.values():
+                content += "    %s\n" % param
+
+        return content

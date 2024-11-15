@@ -199,7 +199,10 @@ class DEAPOptimisation(bluepyopt.optimisations.Optimisation):
 
         # Register the evaluation function for the individuals
         # import deap_efel_eval1
-        self.toolbox.register("evaluate", self.evaluator.evaluate_with_lists)
+        self.toolbox.register(
+            "evaluate",
+            self.evaluator.init_simulator_and_evaluate_with_lists
+        )
 
         # Register the mate operator
         self.toolbox.register(
@@ -253,6 +256,7 @@ class DEAPOptimisation(bluepyopt.optimisations.Optimisation):
             continue_cp=False,
             cp_filename=None,
             cp_frequency=1,
+            cp_period=None,
             parent_population=None,
             terminator=None):
         """Run optimisation"""
@@ -312,6 +316,7 @@ class DEAPOptimisation(bluepyopt.optimisations.Optimisation):
             stats=stats,
             halloffame=self.hof,
             cp_frequency=cp_frequency,
+            cp_period=None,
             continue_cp=continue_cp,
             cp_filename=cp_filename,
             terminator=terminator,
